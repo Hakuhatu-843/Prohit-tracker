@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全記録</title>
+<style>
+  body { font-family:sans-serif; padding:20px; background:#f3f3f3; }
+  h2 { margin-top:30px; }
+  table { border-collapse:collapse; width:100%; margin-top:10px; }
+  th, td { border:1px solid #ccc; padding:5px; text-align:center; }
+  .total { font-weight:bold; background:#f0f0f0; }
+  button { margin-top:20px; padding:5px 10px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<h1>全記録</h1>
+<div id="records-container"></div>
+<button id="download-btn">メモ帳としてダウンロード</button>
+
+<script>
+const recordsContainer = document.getElementById('records-container');
+let entries = JSON.parse(localStorage.getItem('entries')||'[]');
+
+// 月ごとにまとめる
+function groupByMonth(entries){
+  return entries.reduce((acc,e)=>{
+    const month = e.date.slice(0,7);
+    if(!acc[month]) acc[month]=[];
+    acc[month].push(e);
+    return acc;
+  }, {});
+}
+
+function renderAll(){
+  recordsContainer.innerHTML='';
+  const grouped = groupByMonth(entries);
+  Object.keys(grouped).sort().forEach(month=>{
+    const monthEntries = grouped[month];
+    const h2 = document.createElement('h2');
+    h2.textContent = month;
+    recordsContainer.appendChild(h2);
+
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    thead.innerHTML = `<tr><th>日付</th><th>仕入れ</th><th>売上</th><th>利益</th></tr>`;
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    let monthCost=0, monthSales=0, monthProfit=0;
+    monthEntries.sort((a,b)=>a.date.localeCompare(b.date)).forEach(e=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${e.date}</td><td>${e.cost}</td><td>${e.sales}</td><td>${e.profit}</td>`;
+      tbody.appendChild(tr);
+      monthCost += e.cost;
+      monthSales += e.sales;
+      monthProfit += e.profit;
+    });
+    // 月末合計行
+    const trTotal = document.createElement('tr');
+    trTotal.className='total';
+    trTotal.innerHTML = `<td>合計</td><td>${monthCost}</td><td>${monthSales}</td><td>${monthProfit}</td>`;
+    tbody.appendChild(trTotal);
+
+    table.appendChild(tbody);
+    recordsContainer.appendChild(table);
+  });
+}
+
+// TXTダウンロード
+document.getElementById('download-btn').onclick = ()=>{
+  let txt = '';
+  const grouped = groupByMonth(entries);
+  Object.keys(grouped).sort().forEach(month=>{
+    txt += month + '\n';
+    let monthCost=0, monthSales=0, monthProfit=0;
+    grouped[month].sort((a,b)=>a.date.localeCompare(b.date)).forEach(e=>{
+      txt += `${e.date}\t${e.cost}\t${e.sales}\t${e.profit}\n`;
+      monthCost += e.cost;
+      monthSales += e.sales;
+      monthProfit += e.profit;
+    });
+    txt += `合計\t${monthCost}\t${monthSales}\t${monthProfit}\n\n`;
+  });
+  const blob = new Blob([txt], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'profit_records.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+renderAll();
+</script>
+
+</body>
+</html>

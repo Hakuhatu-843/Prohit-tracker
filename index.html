@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>利益トラッカー</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { font-family: sans-serif; background:#f3f3f3; padding:20px; }
+  input, select, button { padding:5px; margin:2px; }
+  table { border-collapse: collapse; width:100%; margin-top:10px; }
+  th, td { border:1px solid #ccc; padding:5px; text-align:center; }
+  .chart-container { width:100%; max-width:600px; margin-top:20px; }
+  .calculator { position: relative; margin-top:20px; background:white; padding:10px; border:1px solid #ccc; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.2); }
+  .calc-display { width:160px; text-align:right; margin-bottom:5px; padding:5px; font-size:18px; }
+  .calc-buttons { display:grid; grid-template-columns:repeat(4,40px); gap:5px; }
+  .calc-buttons button { width:40px; height:40px; font-size:16px; cursor:pointer; }
+  .profit { font-weight:bold; }
+</style>
+</head>
+<body>
+
+<h1>利益トラッカー</h1>
+
+<!-- 今日/今週/今月の利益表示 -->
+<div style="margin-bottom:10px;">
+  今日: <span id="profit-today" class="profit today">0</span>円 |
+  今週: <span id="profit-week" class="profit">0</span>円 |
+  今月: <span id="profit-month" class="profit">0</span>円
+  <button onclick="window.open('all.html','_blank')">もっと見る</button>
+</div>
+
+<!-- 入力フォーム -->
+<div>
+  <span id="yearLabel"></span>年
+  <select id="month"></select>月
+  <select id="day"></select>日
+  <input type="number" id="cost" placeholder="仕入れ原価">
+  <input type="number" id="sales" placeholder="売上">
+  <button id="addBtn" onclick="addEntry()">登録</button>
+  <button id="cancelEditBtn" onclick="cancelEdit()" style="display:none;">キャンセル</button>
+  <button onclick="undoEntry()">1つ戻す</button>
+  <button onclick="clearData()">全削除</button>
+</div>
+
+<table>
+  <thead><tr><th>日付</th><th>仕入れ</th><th>売上</th><th>利益</th><th>操作</th></tr></thead>
+  <tbody id="entryTable"></tbody>
+</table>
+
+<!-- グラフ切替ボタン -->
+<div>
+  <button onclick="showChart('pie')">円グラフ</button>
+  <button onclick="showChart('bar')">棒グラフ</button>
+</div>
+
+<div class="chart-container">
+  <canvas id="barChart"></canvas>
+</div>
+<div class="chart-container">
+  <canvas id="pieChart"></canvas>
+</div>
+
+<!-- 電卓 -->
+<div class="calculator">
+  <input type="text" id="calcInput" class="calc-display" readonly>
+  <div class="calc-buttons" id="calcButtons"></div>
+</div>
+
+<script>
+let entries = JSON.parse(localStorage.getItem('entries')||'[]');
+let history = [];
+let editIndex = -1;
+let lastTodayProfit = 0;
+
+const entryTable = document.getElementById('entryTable');
+const costInput = document.getElementById('cost');
+const salesInput = document.getElementById('sales');
+const addBtn = document.getElementById('addBtn');
+const cancelEditBtn = document.getElementById('cancelEditBtn');
+const profitTodayEl = document.getElementById('profit-today');
+const profitWeekEl = document.getElementById('profit-week');
+const profitMonthEl = document.getElementById('profit-month');
+const calcInput = document.getElementById('calcInput');
+const calcButtonsDiv = document.getElementById('calcButtons');
+
+// --- 年月日の初期設定 ---
+const year = new Date().getFullYear();
+document.getElementById('yearLabel').textContent = year;
+
+const monthSelect = document.getElementById('month');
+for(let m=1;m<=12;m++){
+  const opt=document.createElement('option');
+  opt.value=m.toString().padStart(2,'0');
+  opt.textContent=m;
+  monthSelect.appendChild(opt);
+}
+
+const daySelect = document.getElementById('day');
+for(let d=1;d<=31;d++){
+  const opt=document.createElement('option');
+  opt.value=d.toString().padStart(2,'0');
+  opt.textContent=d;
+  daySelect.appendChild(opt);
+}
+
+function save(){ localStorage.setItem('entries', JSON.stringify(entries)); }
+
+function addEntry(){
+  const month = monthSelect.value;
+  const day = daySelect.value;
+  const date = `${year}-${month}-${day}`;
+  const cost = Number(costInput.value)||0;
+  const sales = Number(salesInput.value)||0;
+  if(!month || !day) return;
+
+  history.push(JSON.parse(JSON.stringify(entries)));
+
+  if(editIndex >= 0){
+    entries[editIndex].date = date;
+    entries[editIndex].cost = cost;
+    entries[editIndex].sales = sales;
+    entries[editIndex].profit = sales - cost;
+    editIndex = -1;
+    addBtn.textContent = "登録";
+    cancelEditBtn.style.display = "none";
+  } else {
+    const existing = entries.find(e => e.date === date);
+    if(existing){
+      existing.cost += cost;
+      existing.sales += sales;
+      existing.profit = existing.sales - existing.cost;
+    } else {
+      entries.push({date, cost, sales, profit:sales-cost});
+    }
+  }
+
+  costInput.value=''; salesInput.value='';
+  refreshAll();
+}
+
+function startEdit(index){
+  const e = entries[index];
+  const [y,m,d] = e.date.split('-');
+  monthSelect.value = m;
+  daySelect.value = d;
+  costInput.value = e.cost;
+  salesInput.value = e.sales;
+  editIndex = index;
+  addBtn.textContent = "更新";
+  cancelEditBtn.style.display = "inline";
+}
+
+function cancelEdit(){
+  editIndex = -1;
+  addBtn.textContent = "登録";
+  cancelEditBtn.style.display = "none";
+  costInput.value = '';
+  salesInput.value = '';
+}
+
+function undoEntry(){
+  if(history.length === 0) return alert('戻せる履歴がありません');
+  if(confirm('直前の登録を取り消しますか？')){
+    entries = history.pop();
+    refreshAll();
+  }
+}
+
+function clearData(){
+  if(confirm('全て削除しますか？')){
+    entries=[]; history=[]; save(); refreshAll();
+  }
+}
+
+function renderTable(){
+  entryTable.innerHTML='';
+  entries.sort((a,b)=>a.date.localeCompare(b.date));
+  entries.forEach((e,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${e.date}</td><td>${e.cost}</td><td>${e.sales}</td><td>${e.profit}</td><td><button onclick="startEdit(${i})">編集</button></td>`;
+    entryTable.appendChild(tr);
+  });
+}
+
+function groupBy(fn){
+  return entries.reduce((acc,e)=>{ const k=fn(e); acc[k]=acc[k]||[]; acc[k].push(e); return acc; },{});
+}
+
+function makeChartData(grouped){
+  const labels = Object.keys(grouped).sort();
+  const salesData = labels.map(l=>grouped[l].reduce((s,e)=>s+(e.sales||0),0));
+  const costData = labels.map(l=>grouped[l].reduce((s,e)=>s+(e.cost||0),0));
+  const profitData = labels.map(l=>grouped[l].reduce((s,e)=>s+(e.profit||0),0));
+  return { labels, datasets:[
+    {label:'売上', data:salesData, backgroundColor:'#4CAF50'},
+    {label:'仕入れ', data:costData, backgroundColor:'#FF9800'},
+    {label:'利益', data:profitData, backgroundColor:'#2196F3'}
+  ]};
+}
+
+let barChart=null, pieChart=null;
+function renderCharts(){
+  const monthly = groupBy(e=>e.date.slice(0,7));
+  const data = makeChartData(monthly);
+  if(barChart) barChart.destroy();
+  barChart=new Chart(document.getElementById('barChart'), { type:'bar', data:data });
+
+  const currentMonth = `${year}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+  const thisMonth = entries.filter(e=>e.date.startsWith(currentMonth));
+  const totalSales = thisMonth.reduce((s,e)=>s+e.sales,0);
+  const totalCost = thisMonth.reduce((s,e)=>s+e.cost,0);
+  if(pieChart) pieChart.destroy();
+  pieChart=new Chart(document.getElementById('pieChart'), { type:'pie', data:{
+    labels:['売上','仕入れ'],
+    datasets:[{data:[totalSales,totalCost], backgroundColor:['#4CAF50','#FF9800']}]
+  }});
+}
+
+// グラフ切替
+function showChart(type){
+  document.getElementById('barChart').style.display = type==='bar' ? 'block' : 'none';
+  document.getElementById('pieChart').style.display = type==='pie' ? 'block' : 'none';
+}
+showChart('bar');
+
+// --- 今日/今週/今月の利益と色アニメーション ---
+function updateProfits(){
+  const todayStr = new Date().toISOString().slice(0,10);
+  const todayProfit = entries.filter(e=>e.date===todayStr).reduce((s,e)=>s+e.profit,0);
+
+  // 色付けとアニメーション
+  let color='#000';
+  if(todayProfit > lastTodayProfit) color='orange';
+  else if(todayProfit < lastTodayProfit) color='deepskyblue';
+  profitTodayEl.textContent = todayProfit;
+  profitTodayEl.style.transition = 'color 0.5s, transform 0.3s';
+  profitTodayEl.style.color = color;
+  profitTodayEl.style.transform = 'scale(1.2)';
+  setTimeout(()=>{ profitTodayEl.style.transform='scale(1)'; },300);
+  lastTodayProfit = todayProfit;
+
+  // 今週
+  const now=new Date();
+  const dayOfWeek = now.getDay()||7;
+  const monday = new Date(now); monday.setDate(now.getDate()-dayOfWeek+1);
+  const weekProfit = entries.filter(e=>{
+    const d=new Date(e.date);
+    return d>=monday && d<=now;
+  }).reduce((s,e)=>s+e.profit,0);
+  profitWeekEl.textContent = weekProfit;
+
+  // 今月
+  const monthStr = `${year}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const monthProfit = entries.filter(e=>e.date.startsWith(monthStr)).reduce((s,e)=>s+e.profit,0);
+  profitMonthEl.textContent = monthProfit;
+}
+
+// すべてを更新
+function refreshAll(){
+  renderTable();
+  renderCharts();
+  updateProfits();
+}
+
+// --- 電卓 ---
+['7','8','9','/','4','5','6','*','1','2','3','-','0','.','=','+'].forEach(b=>{
+  const btn=document.createElement('button'); btn.textContent=b;
+  btn.onclick=()=>{ if(b==='='){ try{ calcInput.value=eval(calcInput.value||0); }catch{ calcInput.value='エラー'; } } else { calcInput.value+=b; } };
+  calcButtonsDiv.appendChild(btn);
+});
+const clearBtn=document.createElement('button');
+clearBtn.textContent='C';
+clearBtn.onclick=()=>calcInput.value='';
+clearBtn.style.gridColumn='span 4';
+calcButtonsDiv.appendChild(clearBtn);
+
+refreshAll();
+</script>
+
+</body>
+</html>
