@@ -6,25 +6,23 @@
 <title>利益トラッカー</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-body { font-family: sans-serif; background:#f3f3f3; padding:20px; }
-input, select, button { padding:5px; margin:2px; }
-table { border-collapse: collapse; width:100%; margin-top:10px; }
-th, td { border:1px solid #ccc; padding:5px; text-align:center; }
-.chart-container { width:100%; max-width:600px; margin-top:20px; }
-.calculator { position: relative; margin-top:20px; background:white; padding:10px; border:1px solid #ccc; border-radius:10px; box-shadow:0 2px 6px rgba(0,0,0,0.2); }
-.calc-display { width:160px; text-align:right; margin-bottom:5px; padding:5px; font-size:18px; }
-.calc-buttons { display:grid; grid-template-columns:repeat(4,40px); gap:5px; }
-.calc-buttons button { width:40px; height:40px; font-size:16px; cursor:pointer; }
-.profit-display { font-size:20px; margin-bottom:10px; }
-.profit-display span { font-weight:bold; margin-right:15px; transition: color 0.5s, transform 0.3s; }
-.profit-buttons button { margin-right:5px; }
+body{font-family:sans-serif;background:#f3f3f3;padding:20px;}
+input,select,button{padding:5px;margin:2px;}
+table{border-collapse:collapse;width:100%;margin-top:10px;}
+th,td{border:1px solid #ccc;padding:5px;text-align:center;}
+.chart-container{width:100%;max-width:600px;margin-top:20px;}
+.calculator{position:relative;margin-top:20px;background:white;padding:10px;border:1px solid #ccc;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.2);}
+.calc-display{width:160px;text-align:right;margin-bottom:5px;padding:5px;font-size:18px;}
+.calc-buttons{display:grid;grid-template-columns:repeat(4,40px);gap:5px;}
+.calc-buttons button{width:40px;height:40px;font-size:16px;cursor:pointer;}
+.profit-display{font-size:20px;margin-bottom:10px;}
+.profit-display span{font-weight:bold;margin-right:15px;transition: color 0.5s, transform 0.3s;}
+.profit-buttons button{margin-right:5px;}
 </style>
 </head>
 <body>
-
 <h1>利益トラッカー</h1>
 
-<!-- 利益表示 -->
 <div class="profit-display">
   <span id="profitDisplay">0</span>
 </div>
@@ -34,11 +32,19 @@ th, td { border:1px solid #ccc; padding:5px; text-align:center; }
   <button onclick="setProfitMode('month')">今月</button>
 </div>
 
-<!-- 入力フォーム -->
 <div>
   <span id="yearLabel"></span>年
   <select id="month"></select>月
   <select id="day"></select>日
+  <select id="category" required>
+    <option value="">取引内容を選択</option>
+    <option>石垢</option>
+    <option>仲介費</option>
+    <option>お小遣い</option>
+    <option>垢仕入れ</option>
+    <option>課金</option>
+    <option>その他</option>
+  </select>
   <input type="number" id="cost" placeholder="仕入れ原価">
   <input type="number" id="sales" placeholder="売上">
   <button id="addBtn">登録</button>
@@ -47,278 +53,148 @@ th, td { border:1px solid #ccc; padding:5px; text-align:center; }
   <button id="clearBtn">全削除</button>
 </div>
 
-<!-- テーブル -->
 <table>
-  <thead><tr><th>日付</th><th>仕入れ</th><th>売上</th><th>利益</th><th>操作</th></tr></thead>
+  <thead>
+    <tr><th>日付</th><th>仕入れ</th><th>売上</th><th>利益</th><th>内容</th><th>操作</th></tr>
+  </thead>
   <tbody id="entryTable"></tbody>
 </table>
 <button id="moreBtn" style="display:none;" onclick="window.open('all.html','_blank')">もっと見る</button>
 
-<!-- グラフ切替 -->
 <div>
   <button onclick="showChart('pie')">円グラフ</button>
   <button onclick="showChart('bar')">棒グラフ</button>
 </div>
-<div class="chart-container">
-  <canvas id="barChart"></canvas>
-</div>
-<div class="chart-container">
-  <canvas id="pieChart"></canvas>
-</div>
+<div class="chart-container"><canvas id="barChart"></canvas></div>
+<div class="chart-container"><canvas id="pieChart"></canvas></div>
 
-<!-- 電卓 -->
 <div class="calculator">
   <input type="text" id="calcInput" class="calc-display" readonly>
   <div class="calc-buttons" id="calcButtons"></div>
 </div>
 
 <script>
-// ====== データと状態 ======
-let entries = JSON.parse(localStorage.getItem('entries')||'[]');
-let history = [];
-let editIndex = -1;
-let profitMode = 'today';
-const profitDisplay = document.getElementById('profitDisplay');
-let lastProfit = { today:0, week:0, month:0 };
-const increaseColors = ['#FFFF66','#FFB84D','#FF8000','#FF3300','#990000','#660000'];
-const decreaseColors = ['#AEEEEE','#87CEFA','#3399FF','#0033CC','#000080','#000033'];
+// ====== データ・状態 ======
+let entries=JSON.parse(localStorage.getItem('entries')||'[]'),history=[],editIndex=-1,profitMode='today';
+const profitDisplay=document.getElementById('profitDisplay'),lastProfit={today:0,week:0,month:0};
 
-// ====== 年月日初期化 ======
-const now = new Date();
-const year = now.getFullYear();
-document.getElementById('yearLabel').textContent = year;
-
-const monthSelect = document.getElementById('month');
-for(let m=1;m<=12;m++){
-  const opt=document.createElement('option');
-  opt.value=m.toString().padStart(2,'0');
-  opt.textContent=m;
-  monthSelect.appendChild(opt);
-}
-monthSelect.value = String(now.getMonth()+1).padStart(2,'0');
-
-const daySelect = document.getElementById('day');
-for(let d=1;d<=31;d++){
-  const opt=document.createElement('option');
-  opt.value=d.toString().padStart(2,'0');
-  opt.textContent=d;
-  daySelect.appendChild(opt);
-}
-daySelect.value = String(now.getDate()).padStart(2,'0');
+// ====== 年月日 ======
+const now=new Date(),year=now.getFullYear();
+document.getElementById('yearLabel').textContent=year;
+const monthSelect=document.getElementById('month');
+for(let m=1;m<=12;m++){let o=document.createElement('option');o.value=m.toString().padStart(2,'0');o.textContent=m;monthSelect.appendChild(o);}
+monthSelect.value=String(now.getMonth()+1).padStart(2,'0');
+const daySelect=document.getElementById('day');
+for(let d=1;d<=31;d++){let o=document.createElement('option');o.value=d.toString().padStart(2,'0');o.textContent=d;daySelect.appendChild(o);}
+daySelect.value=String(now.getDate()).padStart(2,'0');
 
 // ====== 保存 ======
-function save(){ localStorage.setItem('entries', JSON.stringify(entries)); }
+function save(){localStorage.setItem('entries',JSON.stringify(entries));}
 
-// ====== 登録・編集・削除 ======
-document.getElementById('addBtn').onclick = addEntry;
-document.getElementById('cancelEditBtn').onclick = cancelEdit;
-document.getElementById('undoBtn').onclick = undoEntry;
-document.getElementById('clearBtn').onclick = clearData;
+// ====== 登録・編集 ======
+document.getElementById('addBtn').onclick=addEntry;
+document.getElementById('cancelEditBtn').onclick=cancelEdit;
+document.getElementById('undoBtn').onclick=undoEntry;
+document.getElementById('clearBtn').onclick=clearData;
 
 function addEntry(){
-  const month = monthSelect.value;
-  const day = daySelect.value;
-  const date = `${year}-${month}-${day}`;
-  const cost = Number(document.getElementById('cost').value)||0;
-  const sales = Number(document.getElementById('sales').value)||0;
-  if(!month||!day) return;
-
+  const date=`${year}-${monthSelect.value}-${daySelect.value}`;
+  const category=document.getElementById('category').value;
+  const cost=Number(document.getElementById('cost').value)||0;
+  const sales=Number(document.getElementById('sales').value)||0;
+  if(!category){alert('取引内容を選択してください');return;}
   history.push(JSON.parse(JSON.stringify(entries)));
-
-  if(editIndex>=0){
-    entries[editIndex]={date,cost,sales,profit:sales-cost};
-    editIndex=-1;
-    document.getElementById('addBtn').textContent='登録';
-    document.getElementById('cancelEditBtn').style.display='none';
-  } else {
-    entries.push({date,cost,sales,profit:sales-cost});
-  }
-
-  document.getElementById('cost').value='';
-  document.getElementById('sales').value='';
+  if(editIndex>=0){entries[editIndex]={date,category,cost,sales,profit:sales-cost};editIndex=-1;document.getElementById('addBtn').textContent='登録';document.getElementById('cancelEditBtn').style.display='none';}
+  else entries.push({date,category,cost,sales,profit:sales-cost});
+  document.getElementById('category').value='';document.getElementById('cost').value='';document.getElementById('sales').value='';
   save(); refreshAll();
 }
 
-function startEdit(index){
-  const e = entries[index];
-  const [y,m,d] = e.date.split('-');
-  monthSelect.value=m; daySelect.value=d;
-  document.getElementById('cost').value=e.cost;
-  document.getElementById('sales').value=e.sales;
-  editIndex=index;
-  document.getElementById('addBtn').textContent='更新';
-  document.getElementById('cancelEditBtn').style.display='inline';
+function startEdit(i){
+  const e=entries[i];const [y,m,d]=e.date.split('-');monthSelect.value=m;daySelect.value=d;
+  document.getElementById('category').value=e.category||'';document.getElementById('cost').value=e.cost;document.getElementById('sales').value=e.sales;
+  editIndex=i;document.getElementById('addBtn').textContent='更新';document.getElementById('cancelEditBtn').style.display='inline';
 }
 
-function cancelEdit(){
-  editIndex=-1;
-  document.getElementById('addBtn').textContent='登録';
-  document.getElementById('cancelEditBtn').style.display='none';
-  document.getElementById('cost').value='';
-  document.getElementById('sales').value='';
-}
+function cancelEdit(){editIndex=-1;document.getElementById('addBtn').textContent='登録';document.getElementById('cancelEditBtn').style.display='none';document.getElementById('category').value='';document.getElementById('cost').value='';document.getElementById('sales').value='';}
+function undoEntry(){if(!history.length)return alert('戻せる履歴がありません');if(confirm('直前の登録を取り消しますか？')){entries=history.pop();save();refreshAll();}}
+function clearData(){if(confirm('全て削除しますか？')){entries=[];history=[];save();refreshAll();}}
 
-function undoEntry(){
-  if(history.length===0) return alert('戻せる履歴がありません');
-  if(confirm('直前の登録を取り消しますか？')){
-    entries=history.pop();
-    save(); refreshAll();
-  }
-}
-
-function clearData(){
-  if(confirm('全て削除しますか？')){
-    entries=[]; history=[]; save(); refreshAll();
-  }
-}
-
-// ====== テーブル描画（最新5件表示、配列は保持） ======
+// ====== テーブル描画 ======
 function renderTable(){
-  const tbody = document.getElementById('entryTable');
-  tbody.innerHTML = '';
-
-  // 登録順を逆にして最新を上に
-  const latest5 = entries.slice().reverse().slice(0,5);
-
-  latest5.forEach(e=>{
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${e.date}</td><td>${e.cost}</td><td>${e.sales}</td><td>${e.profit}</td>
-      <td><button onclick="startEdit(${entries.indexOf(e)})">編集</button></td>`;
+  const tbody=document.getElementById('entryTable');tbody.innerHTML='';
+  entries.slice().reverse().slice(0,5).forEach(e=>{
+    const tr=document.createElement('tr');
+    const profitColor=getColorByValue(e.profit);
+    tr.innerHTML=`<td>${e.date}</td><td>${e.cost}</td><td>${e.sales}</td><td style="color:${profitColor}">${e.profit}</td><td>${e.category||'-'}</td><td><button onclick="startEdit(${entries.indexOf(e)})">編集</button></td>`;
     tbody.appendChild(tr);
   });
-
-  document.getElementById('moreBtn').style.display = entries.length>5 ? 'inline' : 'none';
+  document.getElementById('moreBtn').style.display=entries.length>5?'inline':'none';
 }
 
 // ====== 利益計算 ======
 function calcProfit(){
-  const todayStr = now.toISOString().slice(0,10);
-  const monday = new Date(now); monday.setDate(now.getDate()-(now.getDay()||7)+1);
-  const monthStr = `${year}-${String(now.getMonth()+1).padStart(2,'0')}`;
-
-  const todayProfit = entries.filter(e=>e.date===todayStr).reduce((s,e)=>s+e.profit,0);
-  const weekProfit = entries.filter(e=>new Date(e.date)>=monday && new Date(e.date)<=now).reduce((s,e)=>s+e.profit,0);
-  const monthProfit = entries.filter(e=>e.date.startsWith(monthStr)).reduce((s,e)=>s+e.profit,0);
-
-  return {todayProfit, weekProfit, monthProfit};
+  const todayStr=now.toISOString().slice(0,10);
+  const monday=new Date(now);monday.setDate(now.getDate()-(now.getDay()||7)+1);
+  const monthStr=`${year}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  return {
+    todayProfit:entries.filter(e=>e.date===todayStr).reduce((s,e)=>s+e.profit,0),
+    weekProfit:entries.filter(e=>new Date(e.date)>=monday && new Date(e.date)<=now).reduce((s,e)=>s+e.profit,0),
+    monthProfit:entries.filter(e=>e.date.startsWith(monthStr)).reduce((s,e)=>s+e.profit,0)
+  };
 }
 
 function getProfitColor(prev,current){
-  const diff = current-prev;
-  const step = 500;
-  if(diff>0) return increaseColors[Math.min(Math.floor(diff/step),increaseColors.length-1)];
-  if(diff<0) return decreaseColors[Math.min(Math.floor(-diff/step),decreaseColors.length-1)];
-  return '#000';
+  const diff=Math.abs(current-prev);
+  const step=1000;
+  if(diff===0)return '#000';
+  if(diff<1000)return 'orange';
+  const shades=['#FFFF66','#FFB84D','#FF8000','#FF3300','#990000','#660000'];
+  return current>=prev?shades[Math.min(Math.floor(diff/step),shades.length-1)]:shades[Math.min(Math.floor(diff/step),shades.length-1)];
 }
-
-function setProfitMode(mode){
-  profitMode=mode;
-  updateProfitDisplay();
+function getColorByValue(v){
+  if(v>0)return '#33AA33';else if(v<0)return '#FF3300';else return '#000';
 }
+function setProfitMode(m){profitMode=m;updateProfitDisplay();}
 function updateProfitDisplay(){
-  const profits = calcProfit();
-  let value;
-  if(profitMode==='today') value = profits.todayProfit;
-  else if(profitMode==='week') value = profits.weekProfit;
-  else value = profits.monthProfit;
-
-  // 以前の値を保持して色を決定
-  const prev = lastProfit[profitMode] !== undefined ? lastProfit[profitMode] : 0;
-  profitDisplay.textContent = value;
-  profitDisplay.style.color = getProfitColor(prev, value);
-
-  // 簡単なアニメーション
-  profitDisplay.style.transform = 'scale(1.3)';
-  setTimeout(()=>{ profitDisplay.style.transform='scale(1)'; },200);
-
-  // 現在の値を保存（色判定用）
-  lastProfit[profitMode] = value;
+  const profits=calcProfit();
+  let value=profitMode==='today'?profits.todayProfit:profitMode==='week'?profits.weekProfit:profits.monthProfit;
+  const prev=lastProfit[profitMode]||0;
+  profitDisplay.textContent=value;
+  profitDisplay.style.color=getProfitColor(prev,value);
+  profitDisplay.style.transform='scale(1.3)';
+  setTimeout(()=>{profitDisplay.style.transform='scale(1)';},200);
+  lastProfit[profitMode]=value;
 }
 
-
-// ====== グラフ描画 ======
-let barChart=null, pieChart=null;
-
-function groupByMonth(entries){
-  return entries.reduce((acc,e)=>{
-    const m = e.date.slice(0,7);
-    if(!acc[m]) acc[m]=[];
-    acc[m].push(e);
-    return acc;
-  }, {});
-}
-
-function makeChartData(grouped){
-  const labels = Object.keys(grouped).sort();
-  const salesData = labels.map(l=>grouped[l].reduce((s,e)=>s+e.sales,0));
-  const costData = labels.map(l=>grouped[l].reduce((s,e)=>s+e.cost,0));
-  const profitData = labels.map(l=>grouped[l].reduce((s,e)=>s+e.profit,0));
-  return {
-    labels,
-    datasets:[
-      {label:'売上', data:salesData, backgroundColor:'#4CAF50'},
-      {label:'仕入れ', data:costData, backgroundColor:'#FF9800'},
-      {label:'利益', data:profitData, backgroundColor:'#2196F3'}
-    ]
-  };
-}
-
+// ====== グラフ ======
+let barChart=null,pieChart=null;
 function renderCharts(){
-  const monthly = groupByMonth(entries);
-  const data = makeChartData(monthly);
-
-  if(barChart) barChart.destroy();
-  barChart = new Chart(document.getElementById('barChart'),{
-    type:'bar',
-    data: data,
-    options:{ animation:{ duration:500 } }
-  });
-
-  const currentMonth = `${year}-${String(now.getMonth()+1).padStart(2,'0')}`;
-  const thisMonth = entries.filter(e=>e.date.startsWith(currentMonth));
-  const totalSales = thisMonth.reduce((s,e)=>s+e.sales,0);
-  const totalCost = thisMonth.reduce((s,e)=>s+e.cost,0);
-
-  if(pieChart) pieChart.destroy();
-  pieChart = new Chart(document.getElementById('pieChart'),{
-    type:'pie',
-    data:{
-      labels:['売上','仕入れ'],
-      datasets:[{ data:[totalSales,totalCost], backgroundColor:['#4CAF50','#FF9800'] }]
-    },
-    options:{ animation:{ duration:500 } }
-  });
+  const ctxB=document.getElementById('barChart').getContext('2d');
+  const ctxP=document.getElementById('pieChart').getContext('2d');
+  const monday=new Date(now);monday.setDate(now.getDate()-(now.getDay()||7)+1);
+  const weekEntries=entries.filter(e=>new Date(e.date)>=monday && new Date(e.date)<=now);
+  const totalCost=weekEntries.reduce((a,e)=>a+e.cost,0);
+  const totalSales=weekEntries.reduce((a,e)=>a+e.sales,0);
+  const totalProfit=weekEntries.reduce((a,e)=>a+e.profit,0);
+  const colors={cost:'rgba(255,160,160,0.8)',sales:'rgba(150,220,255,0.8)',profit:'rgba(60,180,100,0.9)'};
+  if(barChart)barChart.destroy();
+  barChart=new Chart(ctxB,{type:'bar',data:{labels:['仕入れ','売上','利益'],datasets:[{label:'今週合計',data:[totalCost,totalSales,totalProfit],backgroundColor:[colors.cost,colors.sales,colors.profit]}]},options:{responsive:true,scales:{y:{beginAtZero:true}}}});
+  const allCost=entries.reduce((a,e)=>a+e.cost,0);
+  const allSales=entries.reduce((a,e)=>a+e.sales,0);
+  if(pieChart)pieChart.destroy();
+  pieChart=new Chart(ctxP,{type:'pie',data:{labels:['仕入れ','売上'],datasets:[{data:[allCost,allSales],backgroundColor:[colors.cost,colors.sales]}]},options:{responsive:true}});
 }
-
-// グラフ切替
-function showChart(type){
-// 表示切替
-document.getElementById('barChart').style.display = type==='bar' ? 'block':'none';
-document.getElementById('pieChart').style.display = type==='pie' ? 'block':'none';
-
-  }
-
+function showChart(type){document.getElementById('barChart').style.display=type==='bar'?'block':'none';document.getElementById('pieChart').style.display=type==='pie'?'block':'none';}
 
 // ====== 電卓 ======
-const calcButtonsDiv = document.getElementById('calcButtons');
-const calcInput = document.getElementById('calcInput');
-['7','8','9','/','4','5','6','*','1','2','3','-','0','.','=','+'].forEach(b=>{
-  const btn=document.createElement('button'); btn.textContent=b;
-  btn.onclick=()=> {
-    if(b==='='){
-      try{ calcInput.value = eval(calcInput.value||0); }
-      catch{ calcInput.value='エラー'; }
-    } else calcInput.value+=b;
-  };
-  calcButtonsDiv.appendChild(btn);
-});
-const clearBtnEl=document.createElement('button');
-clearBtnEl.textContent='C';
-clearBtnEl.style.gridColumn='span 4';
-clearBtnEl.onclick=()=>calcInput.value='';
+const calcButtonsDiv=document.getElementById('calcButtons');
+const calcInput=document.getElementById('calcInput');
+['7','8','9','/','4','5','6','*','1','2','3','-','0','.','=','+'].forEach(b=>{const btn=document.createElement('button');btn.textContent=b;btn.onclick=()=>{if(b==='='){try{calcInput.value=eval(calcInput.value||0);}catch{calcInput.value='エラー';}}else calcInput.value+=b;};calcButtonsDiv.appendChild(btn);});
+const clearBtnEl=document.createElement('button');clearBtnEl.textContent='C';clearBtnEl.style.gridColumn='span 4';clearBtnEl.onclick=()=>calcInput.value='';
 calcButtonsDiv.appendChild(clearBtnEl);
 
-// ====== 全体更新 ======
+// ====== 更新 ======
 function refreshAll(){
   renderTable();
   updateProfitDisplay();
@@ -327,9 +203,6 @@ function refreshAll(){
 
 // 初期描画
 refreshAll();
-
 </script>
 </body>
 </html>
-
-
